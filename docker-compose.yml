@@ -1,0 +1,213 @@
+# Autéllo Barskiy.
+# Снаружи открыты только два входа Nginx:
+#   :80   — будущий сайт. API появится здесь же, когда будет backend.
+#   :5000 — локальный реестр образов, TLS и docker login.
+# Postgres, pgAdmin и будущий backend наружу не публикуются.
+# Клиентские данные остаются в сети data на этой машине.
+
+# Docker принимает в имени проекта только латиницу в нижнем регистре.
+name: autello_barskiy
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  nginx:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - registry
+    ports:
+      - "80:80"
+      - "5000:5000"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+      - ./certs/registry.crt:/etc/nginx/certs/registry.crt:ro
+      - ./certs/registry.key:/etc/nginx/certs/registry.key:ro
+    networks:
+      - edge
+      - app
+      - registry_net
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      LEADS_APP_USER: ${LEADS_APP_USER}
+      LEADS_APP_PASSWORD: ${LEADS_APP_PASSWORD}
+      TZ: UTC
+      PGTZ: UTC
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - max_connections=30
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      # В журнал попадают только изменения схемы, не текст заявок.
+      - -c
+      - log_statement=ddl
+      - -c
+      - log_min_duration_statement=-1
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init/01-app-role.sh:/docker-entrypoint-initdb.d/01-app-role.sh:ro
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    labels:
+      # Базу не обновляем автоматически: смена образа не должна останавливать хранилище.
+      - com.centurylinklabs.watchtower.enable=false
+
+  pgadmin:
+    image: dpage/pgadmin4:9.10
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 384m
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      PGADMIN_LISTEN_PORT: "80"
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_CONFIG_ALLOW_SAVE_PASSWORD: "False"
+      PGADMIN_DISABLE_POSTFIX: "true"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    # Только локальный адрес машины. С интернета порт закрыт.
+    # Смотреть базу: ssh -L 5050:127.0.0.1:5050 root@185.182.110.184
+    ports:
+      - "127.0.0.1:5050:80"
+    networks:
+      - data
+      - admin
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REGISTRY_HTTP_ADDR: 0.0.0.0:5000
+      REGISTRY_HTTP_SECRET: ${REGISTRY_HTTP_SECRET}
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+      REGISTRY_AUTH: htpasswd
+      REGISTRY_AUTH_HTPASSWD_REALM: "Lead Registry"
+      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+    volumes:
+      - registry_data:/var/lib/registry
+      - ./registry/htpasswd:/auth/htpasswd:ro
+    networks:
+      - registry_net
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  # backend:
+  #   image: 185.182.110.184:5000/autello-barskiy-backend:latest
+  #   restart: unless-stopped
+  #   env_file:
+  #     - .env
+  #   networks:
+  #     - app
+  #     - data
+  #   expose:
+  #     - "3000"
+  #   # Порты не публиковать. Внешний запрос сюда попасть не может.
+  #   # Nginx в сети app проксирует только /api/.
+  #   labels:
+  #     - com.centurylinklabs.watchtower.enable=true
+
+  # frontend:
+  #   image: 185.182.110.184:5000/autello-barskiy-frontend:latest
+  #   restart: unless-stopped
+  #   networks:
+  #     - app
+  #   expose:
+  #     - "80"
+  #   # Страницу отдаёт только Nginx. Контейнер в интернет не публикуется.
+
+  watchtower:
+    image: nickfedor/watchtower:1.24.0
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 64m
+    security_opt:
+      - no-new-privileges:true
+    # Нужен выход в интернет, чтобы увидеть новые образы. Порты наружу не публикует.
+    # Сокет Docker и так даёт этой службе полный доступ к демону.
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: UTC
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: "86400"
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+networks:
+  # Nginx принимает внешние подключения. Маскарадинг выключен, исходящего NAT нет.
+  edge:
+    name: autello_barskiy_edge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+  # pgAdmin публикует порт только на 127.0.0.1. Исходящего NAT тоже нет.
+  admin:
+    name: autello_barskiy_admin
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+  app:
+    name: autello_barskiy_app
+    internal: true
+  data:
+    name: autello_barskiy_data
+    internal: true
+  registry_net:
+    name: autello_barskiy_registry
+    internal: true
+
+volumes:
+  postgres_data:
+    name: autello_barskiy_postgres_data
+  pgadmin_data:
+    name: autello_barskiy_pgadmin_data
+  registry_data:
+    name: autello_barskiy_registry_data

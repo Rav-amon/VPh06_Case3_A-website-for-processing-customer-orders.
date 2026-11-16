@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "leads-local",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "leads",
+      "Username": "ravil",
+      "SSLMode": "prefer",
+      "Comment": "Локальная база заявок. Доступна только из сети data."
+    }
+  }
+}
