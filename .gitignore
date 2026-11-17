@@ -1,5 +1,7 @@
 # Секреты. Эти файлы остаются на сервере и не попадают в GitHub.
 .env
+.env.*
+!.env.example
 certs/
 registry/htpasswd
 
@@ -8,3 +10,12 @@ registry/htpasswd
 Thumbs.db
 *.log
 *.swp
+
+# Локальное окружение Python.
+__pycache__/
+*.py[cod]
+.venv/
+
+# Frontend: зависимости и артефакты сборки.
+frontend/node_modules/
+frontend/dist/
