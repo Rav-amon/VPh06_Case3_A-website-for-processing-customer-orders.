@@ -13,8 +13,11 @@ if str(ROOT) not in sys.path:
 from app.core.errors import AppError
 from app.core.schema import extract_table_sql, split_sql
 from app.models import MODEL_CLASSES
+from app.core.lead_intelligence import score_lead, sort_leads_by_temperature
+from app.models.admin import prepare_admin_credentials
 from app.models.admin_settings import prepare_admin_settings
 from app.models.behavior import prepare_behavior
+from app.models.behavior_metrics import prepare_behavior_metrics
 from app.models.lead import prepare_lead
 
 
@@ -101,6 +104,106 @@ class BehaviorPayloadTests(unittest.TestCase):
             })
 
 
+class LeadIntelligenceTests(unittest.TestCase):
+    """Горячие лиды получают высокий score и поднимаются в очереди."""
+
+    def test_should_mark_urgent_lead_as_hot(self) -> None:
+        result = score_lead({
+            'client_role': 'руководитель',
+            'deadline': 'сегодня',
+            'niche': 'финансы B2B',
+            'company_size': '500 человек',
+            'business_size': 'крупный холдинг',
+            'company_volume': 'сеть филиалов',
+            'demand_volume': 'комплексный запуск',
+            'task_type': 'срочный запуск',
+            'product_interest': 'сайт',
+            'budget': '450000',
+        })
+        self.assertEqual(result['temperature'], 'hot')
+        self.assertTrue(result['needs_personal_manager'])
+        self.assertGreaterEqual(int(result['score']), 70)
+
+    def test_should_sort_hot_before_cold(self) -> None:
+        ranked = sort_leads_by_temperature([
+            {
+                'id': 1,
+                'client_role': 'сотрудник',
+                'deadline': 'когда получится',
+                'niche': 'хобби блог',
+                'company_size': '1-5',
+                'business_size': 'микро',
+                'company_volume': 'разово',
+                'demand_volume': 'лендинг',
+                'task_type': 'просто узнать',
+                'product_interest': 'консультация',
+                'budget': '15000',
+                'created_at': '2026-01-01T00:00:00Z',
+            },
+            {
+                'id': 2,
+                'client_role': 'руководитель',
+                'deadline': 'срочно',
+                'niche': 'недвижимость',
+                'company_size': '200+',
+                'business_size': 'корпорация',
+                'company_volume': 'региональная сеть',
+                'demand_volume': 'несколько продуктов',
+                'task_type': 'запуск',
+                'product_interest': 'платформа',
+                'budget': '500000',
+                'created_at': '2026-01-02T00:00:00Z',
+            },
+        ])
+        self.assertEqual(ranked[0]['id'], 2)
+        self.assertEqual(ranked[0]['intelligence']['temperature'], 'hot')
+
+
+class LiveMetricsPayloadTests(unittest.TestCase):
+    """Живые метрики принимают секунды и строковые JSON-поля."""
+
+    def test_should_accept_live_metrics_package(self) -> None:
+        prepared = prepare_behavior_metrics({
+            'application_id': 0,
+            'time_on_page': 12,
+            'buttons_clicked': '{"submit":1}',
+            'cursor_positions': '[{"x":10,"y":20,"t":12}]',
+            'return_frequency': 0,
+        })
+        self.assertEqual(prepared['time_on_page'], 12)
+        self.assertIn('submit', prepared['buttons_clicked'])
+
+    def test_should_reject_negative_seconds(self) -> None:
+        with self.assertRaises(AppError):
+            prepare_behavior_metrics({
+                'application_id': 0,
+                'time_on_page': -1,
+                'buttons_clicked': '',
+                'cursor_positions': '',
+                'return_frequency': 0,
+            })
+
+
+class AdminUserPayloadTests(unittest.TestCase):
+    """Логин и пароль администратора проходят базовую проверку."""
+
+    def test_should_normalize_login_and_hash_password(self) -> None:
+        prepared = prepare_admin_credentials({
+            'login': 'Ravil.Admin',
+            'password': 'SecretPass1',
+        })
+        self.assertEqual(prepared['login'], 'ravil.admin')
+        self.assertNotEqual(prepared['password_hash'], 'SecretPass1')
+        self.assertTrue(prepared['password_hash'].startswith('$2'))
+
+    def test_should_reject_short_password(self) -> None:
+        with self.assertRaises(AppError):
+            prepare_admin_credentials({
+                'login': 'admin',
+                'password': 'short',
+            })
+
+
 class AdminPayloadTests(unittest.TestCase):
     """Диапазон бюджета и цены услуги обязаны расти слева направо."""
 
@@ -179,7 +282,15 @@ class RouteTests(unittest.TestCase):
         self.assertIn('/api/v1/leads', paths)
         self.assertIn('/api/v1/behavior/{lead_id}', paths)
         self.assertIn('/api/v1/admin-settings', paths)
+        self.assertIn('/api/v1/auth/login', paths)
+        self.assertIn('/api/v1/auth/register', paths)
+        self.assertIn('/api/v1/auth/bootstrap-status', paths)
+        self.assertIn('/api/v1/stats', paths)
         self.assertIn('/api/v1/health', paths)
+        self.assertIn('/api/behavior-metrics/', paths)
+        self.assertIn('/api/behavior-metrics', paths)
+        self.assertIn('/api/applications/', paths)
+        self.assertIn('/api/applications', paths)
 
 
 class SchemaDocTests(unittest.TestCase):

@@ -1,12 +1,16 @@
-"""Маршруты заявки. Каждый вызывает только операции LeadCrud."""
+"""Маршруты заявки. Создание публичное, остальное — по JWT."""
 
 from fastapi import APIRouter, Depends, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.responses import success
-from app.models.lead import MAX_LONG_TEXT_LENGTH, MAX_NAME_LENGTH, MAX_SHORT_TEXT_LENGTH
-from app.routes.deps import get_lead_crud
-from app.models.lead import LeadCrud
+from app.models.lead import (
+    MAX_LONG_TEXT_LENGTH,
+    MAX_NAME_LENGTH,
+    MAX_SHORT_TEXT_LENGTH,
+    LeadCrud,
+)
+from app.routes.deps import get_lead_crud, require_admin
 
 DEFAULT_LIST_LIMIT = 50
 MAX_LIST_LIMIT = 100
@@ -54,6 +58,7 @@ async def create_lead(
 
 @router.get('')
 async def list_leads(
+    _admin: dict[str, object] = Depends(require_admin),
     limit: int = Query(default=DEFAULT_LIST_LIMIT, ge=1, le=MAX_LIST_LIMIT),
     offset: int = Query(default=0, ge=0, le=MAX_OFFSET),
     crud: LeadCrud = Depends(get_lead_crud),
@@ -65,6 +70,7 @@ async def list_leads(
 
 @router.get('/{lead_id}')
 async def read_lead(
+    _admin: dict[str, object] = Depends(require_admin),
     lead_id: int = Path(ge=1),
     crud: LeadCrud = Depends(get_lead_crud),
 ) -> dict[str, object]:
@@ -76,6 +82,7 @@ async def read_lead(
 @router.put('/{lead_id}')
 async def update_lead(
     body: LeadBody,
+    _admin: dict[str, object] = Depends(require_admin),
     lead_id: int = Path(ge=1),
     crud: LeadCrud = Depends(get_lead_crud),
 ) -> dict[str, object]:
@@ -86,6 +93,7 @@ async def update_lead(
 
 @router.delete('/{lead_id}')
 async def delete_lead(
+    _admin: dict[str, object] = Depends(require_admin),
     lead_id: int = Path(ge=1),
     crud: LeadCrud = Depends(get_lead_crud),
 ) -> dict[str, object]:

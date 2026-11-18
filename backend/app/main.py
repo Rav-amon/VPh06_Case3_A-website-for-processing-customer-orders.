@@ -16,6 +16,8 @@ from app.core.responses import Utf8JSONResponse, failure
 from app.core.schema import apply_schema
 from app.models.admin_settings import AdminSettingsCrud
 from app.routes import api_router
+from app.routes.applications import router as applications_router
+from app.routes.behavior_metrics import router as behavior_metrics_router
 
 API_PREFIX = '/api/v1'
 
@@ -26,7 +28,9 @@ async def lifespan(app: FastAPI):
     from app.core.config import load_settings
 
     configure_logging()
-    database = await Database.connect(load_settings())
+    settings = load_settings()
+    database = await Database.connect(settings)
+    app.state.settings = settings
     app.state.database = database
     try:
         await apply_schema(database)
@@ -39,12 +43,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title='Autéllo Barskiy',
-    summary='Приватный API заявок. Порт контейнера на хост не публикуется.',
+    summary='Приватный API. Доступен только через Nginx во внутренней сети.',
     version='1.0.0',
     lifespan=lifespan,
     default_response_class=Utf8JSONResponse,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 app.include_router(api_router, prefix=API_PREFIX)
+app.include_router(behavior_metrics_router, prefix='/api')
+app.include_router(applications_router, prefix='/api')
 
 
 def _validation_details(errors: list[object]) -> list[dict[str, str]]:

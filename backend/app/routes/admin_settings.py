@@ -1,4 +1,4 @@
-"""Маршруты настроек интерфейса. Вызывают только AdminSettingsCrud."""
+"""Маршруты настроек интерфейса. Чтение публичное, правки — по JWT."""
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,7 +10,7 @@ from app.models.admin_settings import (
     MAX_SERVICES,
     AdminSettingsCrud,
 )
-from app.routes.deps import get_admin_settings_crud
+from app.routes.deps import get_admin_settings_crud, require_admin
 
 router = APIRouter(prefix='/admin-settings', tags=['настройки'])
 
@@ -42,6 +42,7 @@ class AdminSettingsBody(BaseModel):
 @router.post('', status_code=201)
 async def create_admin_settings(
     body: AdminSettingsBody,
+    _admin: dict[str, object] = Depends(require_admin),
     crud: AdminSettingsCrud = Depends(get_admin_settings_crud),
 ) -> dict[str, object]:
     """Создаёт строку настроек, если её ещё нет."""
@@ -61,6 +62,7 @@ async def read_admin_settings(
 @router.put('')
 async def update_admin_settings(
     body: AdminSettingsBody,
+    _admin: dict[str, object] = Depends(require_admin),
     crud: AdminSettingsCrud = Depends(get_admin_settings_crud),
 ) -> dict[str, object]:
     """Заменяет услуги и диапазон бюджета."""
@@ -70,6 +72,7 @@ async def update_admin_settings(
 
 @router.delete('')
 async def reset_admin_settings(
+    _admin: dict[str, object] = Depends(require_admin),
     crud: AdminSettingsCrud = Depends(get_admin_settings_crud),
 ) -> dict[str, object]:
     """Возвращает пустой список услуг и диапазон по умолчанию."""

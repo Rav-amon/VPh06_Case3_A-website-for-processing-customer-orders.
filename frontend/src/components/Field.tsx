@@ -6,7 +6,7 @@ interface IFieldProps {
   value: string;
   error?: string;
   required?: boolean;
-  type?: 'text' | 'email' | 'tel';
+  type?: 'text' | 'email' | 'tel' | 'password' | 'number';
   placeholder?: string;
   multiline?: boolean;
   rows?: number;

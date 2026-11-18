@@ -35,6 +35,13 @@ def map_postgres_error(error: asyncpg.PostgresError) -> AppError:
             )
         if constraint == 'admin_settings_pkey':
             return AppError('conflict', 'Настройки уже созданы', 409, None)
+        if constraint == 'admins_login_unique':
+            return AppError(
+                'conflict',
+                'Администратор с таким логином уже существует',
+                409,
+                None,
+            )
         return AppError('conflict', 'Запись уже существует', 409, None)
     if isinstance(error, asyncpg.ForeignKeyViolationError):
         return AppError('not_found', 'Связанная заявка не найдена', 404, None)

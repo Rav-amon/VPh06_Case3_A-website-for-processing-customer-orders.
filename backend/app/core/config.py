@@ -12,14 +12,18 @@ DEFAULT_POOL_MIN_SIZE = 1
 DEFAULT_POOL_MAX_SIZE = 5
 MAX_POOL_SIZE = 10
 DEFAULT_POSTGRES_PORT = 5432
+DEFAULT_JWT_EXPIRE_MINUTES = 720
+MIN_JWT_SECRET_LENGTH = 32
+MAX_JWT_EXPIRE_MINUTES = 10080
 
 _ROLE_NAME = re.compile(r'^[A-Za-z0-9_]+$')
 _PASSWORD = re.compile(r'^[A-Za-z0-9]+$')
+_JWT_SECRET = re.compile(r'^[A-Za-z0-9._\-]{32,256}$')
 
 
 @dataclass(frozen=True, repr=False)
 class Settings:
-    """Параметры пула. В текстовом представлении пароля нет."""
+    """Параметры пула и JWT. В текстовом представлении секретов нет."""
 
     postgres_host: str
     postgres_port: int
@@ -28,11 +32,14 @@ class Settings:
     postgres_password: str
     pool_min_size: int
     pool_max_size: int
+    jwt_secret: str
+    jwt_expire_minutes: int
 
     def __repr__(self) -> str:
         return (
             f'Settings(host={self.postgres_host}, port={self.postgres_port}, '
-            f'db={self.postgres_db}, user={self.postgres_user})'
+            f'db={self.postgres_db}, user={self.postgres_user}, '
+            f'jwt_expire_minutes={self.jwt_expire_minutes})'
         )
 
 
@@ -82,6 +89,28 @@ def load_settings() -> Settings:
     if pool_min_size > pool_max_size:
         raise RuntimeError('Минимальный размер пула больше максимального')
 
+    jwt_secret = _required('JWT_SECRET')
+    if _JWT_SECRET.fullmatch(jwt_secret) is None:
+        raise RuntimeError(
+            'JWT_SECRET должен содержать 32–256 символов: латиница, цифры, ._-',
+        )
+    if len(jwt_secret) < MIN_JWT_SECRET_LENGTH:
+        raise RuntimeError(
+            f'JWT_SECRET короче {MIN_JWT_SECRET_LENGTH} символов',
+        )
+
+    expire_raw = os.environ.get(
+        'JWT_EXPIRE_MINUTES',
+        str(DEFAULT_JWT_EXPIRE_MINUTES),
+    ).strip()
+    if not expire_raw.isdigit():
+        raise RuntimeError('JWT_EXPIRE_MINUTES должно быть целым числом')
+    jwt_expire_minutes = int(expire_raw)
+    if jwt_expire_minutes < 5 or jwt_expire_minutes > MAX_JWT_EXPIRE_MINUTES:
+        raise RuntimeError(
+            f'JWT_EXPIRE_MINUTES должно быть от 5 до {MAX_JWT_EXPIRE_MINUTES}',
+        )
+
     return Settings(
         postgres_host=host,
         postgres_port=port,
@@ -90,4 +119,6 @@ def load_settings() -> Settings:
         postgres_password=password,
         pool_min_size=pool_min_size,
         pool_max_size=pool_max_size,
+        jwt_secret=jwt_secret,
+        jwt_expire_minutes=jwt_expire_minutes,
     )

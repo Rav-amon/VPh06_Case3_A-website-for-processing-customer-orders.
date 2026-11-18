@@ -4,12 +4,14 @@
 
 ## Стек и структура
 
-- `src/api/` — клиент запросов к `/api/v1/*` (`admin-settings`, `leads`, `behavior`)
-- `src/components/` — форма анкеты (`LeadForm`), поля ввода (`Field`), ползунок бюджета (`BudgetSlider`), фоновая анимация (`GoldOrbs`)
-- `src/hooks/` — трекер поведенческих метрик (`useBehaviorTracker`)
-- `src/pages/` — главная страница (`HomePage`)
-- `src/utils/` — схема валидации Zod и форматирование сумм
+- `src/api/` — клиент `/api/v1/*` (`auth`, `admin-settings`, `stats`, `leads`, `behavior`)
+- `src/components/` — форма анкеты, поля, ползунок, админ-редактор услуг и статистика
+- `src/hooks/` — трекер поведения и сессия администратора (`useAuth`)
+- `src/pages/` — главная и админ-панель (`/admin`, `/admin/login`)
+- `src/utils/` — Zod, форматирование, хранение JWT
 - `src/types/` — типы API и состояния формы
+
+Админка: `/admin` (JWT). Пока нет ни одного администратора, на `/admin/login` видна кнопка регистрации.
 
 ## Сборка и запуск
 

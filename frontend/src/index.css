@@ -60,6 +60,12 @@ body {
   .field-error {
     @apply text-sm text-red-300/90;
   }
+
+  .table-input {
+    @apply w-full border border-transparent bg-transparent px-2 py-1.5
+      text-sm text-gold-100 outline-none transition
+      placeholder:text-mist/35 focus:border-gold-400/35 focus:bg-ink-950/40;
+  }
 }
 
 input[type='range'] {

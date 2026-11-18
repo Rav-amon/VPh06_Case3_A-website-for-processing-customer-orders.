@@ -1,9 +1,7 @@
 # Autéllo Barskiy.
-# Снаружи открыты только два входа Nginx:
-#   :80   — сайт и узкий вход /api/. Контейнер backend на хост не публикуется.
-#   :5000 — локальный реестр образов, TLS и docker login.
-# Postgres и backend наружу не публикуются. pgAdmin слушает только 127.0.0.1.
-# Клиентские данные остаются в сети data на этой машине.
+# Снаружи открыт только Nginx :80 (сайт + узкий /api/ для фронтенда).
+# Backend слушает 8000 только внутри Docker (expose), на хост не публикуется.
+# Postgres — только сеть data. pgAdmin и registry отключены (profile tools).
 
 # Docker принимает в имени проекта только латиницу в нижнем регистре.
 name: autello_barskiy
@@ -23,21 +21,16 @@ services:
     security_opt:
       - no-new-privileges:true
     depends_on:
-      - registry
       - backend
     ports:
       - "80:80"
-      - "5000:5000"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./frontend/dist:/usr/share/nginx/html:ro
-      - ./certs/registry.crt:/etc/nginx/certs/registry.crt:ro
-      - ./certs/registry.key:/etc/nginx/certs/registry.key:ro
     networks:
       - edge
       - app
-      - registry_net
     labels:
       - com.centurylinklabs.watchtower.enable=true
 
@@ -66,7 +59,6 @@ services:
       - work_mem=2MB
       - -c
       - maintenance_work_mem=32MB
-      # В журнал попадают только изменения схемы, не текст заявок.
       - -c
       - log_statement=ddl
       - -c
@@ -83,10 +75,11 @@ services:
       retries: 10
       start_period: 20s
     labels:
-      # Базу не обновляем автоматически: смена образа не должна останавливать хранилище.
       - com.centurylinklabs.watchtower.enable=false
 
+  # Включение: docker compose --profile tools up -d pgadmin
   pgadmin:
+    profiles: ["tools"]
     image: dpage/pgadmin4:9.10
     restart: unless-stopped
     logging: *default-logging
@@ -107,17 +100,17 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
-    # Только локальный адрес машины. С интернета порт закрыт.
-    # Смотреть базу: ssh -L 5050:127.0.0.1:5050 root@185.182.110.184
     ports:
       - "127.0.0.1:5050:80"
     networks:
       - data
       - admin
     labels:
-      - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.enable=false
 
+  # Включение: docker compose --profile tools up -d registry
   registry:
+    profiles: ["tools"]
     image: registry:2
     restart: unless-stopped
     logging: *default-logging
@@ -138,7 +131,7 @@ services:
     networks:
       - registry_net
     labels:
-      - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.enable=false
 
   backend:
     build:
@@ -162,11 +155,9 @@ services:
     networks:
       - app
       - data
+    # Порт 8000 только внутри сети app. На хост не публикуется.
     expose:
       - "8000"
-    # Ключа ports нет: хост этот порт не слушает.
-    # Сети app и data внутренние, исходящего доступа в интернет у контейнера нет.
-    # Снаружи Nginx пускает только приём заявки и чтение настроек формы.
     healthcheck:
       test:
         - CMD
@@ -178,17 +169,7 @@ services:
       retries: 10
       start_period: 20s
     labels:
-      # Образ собирается на машине. Watchtower не должен подменять его чужим тегом.
       - com.centurylinklabs.watchtower.enable=false
-
-  # frontend:
-  #   image: 185.182.110.184:5000/autello-barskiy-frontend:latest
-  #   restart: unless-stopped
-  #   networks:
-  #     - app
-  #   expose:
-  #     - "80"
-  #   # Страницу отдаёт только Nginx. Контейнер в интернет не публикуется.
 
   watchtower:
     image: nickfedor/watchtower:1.24.0
@@ -197,8 +178,6 @@ services:
     mem_limit: 64m
     security_opt:
       - no-new-privileges:true
-    # Нужен выход в интернет, чтобы увидеть новые образы. Порты наружу не публикует.
-    # Сокет Docker и так даёт этой службе полный доступ к демону.
     network_mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -211,12 +190,10 @@ services:
       - com.centurylinklabs.watchtower.enable=true
 
 networks:
-  # Nginx принимает внешние подключения. Маскарадинг выключен, исходящего NAT нет.
   edge:
     name: autello_barskiy_edge
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"
-  # pgAdmin публикует порт только на 127.0.0.1. Исходящего NAT тоже нет.
   admin:
     name: autello_barskiy_admin
     driver_opts:

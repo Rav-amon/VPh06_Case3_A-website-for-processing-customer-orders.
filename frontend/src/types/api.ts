@@ -80,3 +80,54 @@ export interface IBehaviorPayload {
   screen: string;
   referrer: string;
 }
+
+export interface IAdminUser {
+  id: number;
+  login: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IAuthTokenResponse {
+  access_token: string;
+  token_type: string;
+  admin: IAdminUser;
+}
+
+export interface IBootstrapStatus {
+  registration_open: boolean;
+}
+
+export interface INamedCount {
+  name: string;
+  count: number;
+}
+
+export interface IDayCount {
+  day: string;
+  count: number;
+}
+
+export interface IRecentLead {
+  id: number;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  email: string;
+  product_interest: string;
+  budget: string;
+  client_role: string;
+  created_at: string;
+}
+
+export interface IAdminStats {
+  total_leads: number;
+  total_with_behavior: number;
+  avg_time_on_page_ms: number;
+  avg_return_count: number;
+  by_role: INamedCount[];
+  by_product: INamedCount[];
+  by_day: IDayCount[];
+  recent_leads: IRecentLead[];
+  days_window: number;
+}

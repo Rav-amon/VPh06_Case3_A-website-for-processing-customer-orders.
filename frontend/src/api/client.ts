@@ -1,4 +1,5 @@
 import type { IApiResponse } from '@/types/api';
+import { clearAuthToken, readAuthToken } from '@/utils/auth-storage';
 
 const REQUEST_TIMEOUT_MS = 20000;
 
@@ -16,25 +17,39 @@ export class ApiClientError extends Error {
   }
 }
 
+interface IApiRequestOptions extends RequestInit {
+  auth?: boolean;
+}
+
 /**
  * Выполняет JSON-запрос к публичному API через Nginx.
  */
 export async function apiRequest<T>(
   path: string,
-  init?: RequestInit,
+  init?: IApiRequestOptions,
 ): Promise<T> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const { auth = false, headers, ...rest } = init ?? {};
 
   try {
+    const requestHeaders: Record<string, string> = {
+      Accept: 'application/json',
+      ...(rest.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(headers as Record<string, string> | undefined),
+    };
+
+    if (auth) {
+      const token = readAuthToken();
+      if (token) {
+        requestHeaders.Authorization = `Bearer ${token}`;
+      }
+    }
+
     const response = await fetch(path, {
-      ...init,
+      ...rest,
       signal: controller.signal,
-      headers: {
-        Accept: 'application/json',
-        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-        ...init?.headers,
-      },
+      headers: requestHeaders,
     });
 
     let payload: IApiResponse<T>;
@@ -50,6 +65,9 @@ export async function apiRequest<T>(
     }
 
     if (!response.ok || payload.error) {
+      if (auth && response.status === 401) {
+        clearAuthToken();
+      }
       throw new ApiClientError(
         payload.error?.code ?? 'http_error',
         payload.error?.message ?? payload.message ?? 'Запрос не выполнен',
